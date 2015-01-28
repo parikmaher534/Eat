@@ -1,16 +1,18 @@
 var express = require('express'),
-    router = express.Router(),
+    router = express.Router();
 
-    fs = require('fs');
+/* Тут подрубаем все контроллеры которые нужны */
+/**
+  TODO: сделать автоматическое подключения контроллеров...
+ */
+var pathToController     = '../controllers/',
+    pageController       = require(pathToController + 'PageController.js'),
+    categoriesController = require(pathToController + 'CategoriesController.js');
 
 
-/* GET home page. */
-router.get('/', function(req, res, next) {
+/* Связываем урлы с ручками */
+router.get('/', pageController.init);
+router.get('/.categories', categoriesController.init);
 
-    fs.readFile('public/frontend/desktop.bundles/index/index.html', function(err, data) {
-        res.send(data.toString('utf-8'));
-    });
-
-});
 
 module.exports = router;

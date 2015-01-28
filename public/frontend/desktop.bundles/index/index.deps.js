@@ -76,7 +76,24 @@ exports.deps = [
         "elem": "js"
     },
     {
-        "block": "test-block"
+        "block": "page",
+        "elem": "meta"
+    },
+    {
+        "block": "page",
+        "mod": "theme"
+    },
+    {
+        "block": "page",
+        "mod": "theme",
+        "val": "islands"
+    },
+    {
+        "block": "ua",
+        "elem": "svg"
+    },
+    {
+        "block": "b-content"
     }
 ];
 exports.depsByTechs = {
