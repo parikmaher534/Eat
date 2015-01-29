@@ -24,6 +24,8 @@ _PAGE_PATH = '';
 PATHS = {};
 PATHS.APP = path.resolve(__dirname);
 PATHS.LIBS = PATHS.APP + '/libs';
+controllers = {};
+models = {};
 
 
 //Глобальные модули, которые часто используеся по всем проекте
@@ -46,7 +48,9 @@ fs.readdirSync(PATHS.APP).forEach(function(fileName) {
 });
 
 
+/* Горорим держать одновременно не более 50 соединений */
 http.globalAgent.maxSockets = 50;
+
 
 /**
  *  Настраиваем логирование системы.
@@ -56,145 +60,49 @@ logger.pipe(loggerFilter).pipe(loggerHuman).pipe(process.stdout);
 log = logger.log.bind(logger);
 
 
-
-/* Global  Caught exception handler*/
-// var ejs = require("ejs");
-
-// process.on('uncaughtException', function(err) {
-//     var smtpTransport = mailer.createTransport("SMTP", config.smtpOptions),
-//         templateOptions = {
-//             message : err,
-//             trace: err.stack
-//         };
-
-//     /* Send mail */
-//     ejs.renderFile(PATHS.APP + '/views/email/error.html', templateOptions, function(err, html) {
-//         var options = {
-//             from: "infowall@speedandfunction.com",
-//             to: 'kolya.p@speedandfunction.com, danchik@gmail.com, alexander.l@speedandfunction.com',
-//             subject: config.project.name + ' EXCEPTION',
-//             html : html
-//         };
-
-//         smtpTransport.sendMail(options);
-//     });
-// });
-
-
-
-
-
-
-
-controllers = {};
-models = {};
-
-/* End GLOBALS */
+/**
+ * Соединяемся с базой данных
+ * TODO: создавать структуру базы
+ */
 ;(function() {
-    var appfogMongoData, appMongoData, mongourl;
+    var dbConfig = config.mongodb;
 
-    // console.log('runMongoDB');
+    mongoose.connect(dbConfig.host, dbConfig.dbname, dbConfig.port);
 
-    if (process.env.VCAP_SERVICES) {
-        // console.log('\nAppfog DB');
-        // console.log('\nVCAP_SERVICES', process.env.VCAP_SERVICES);
+    mongooseIncr.loadAutoIncr(mongoose.connection);
 
-        appfogMongoData = JSON.parse(process.env.VCAP_SERVICES)['mongodb-1.8'][0]['credentials'];
-
-        // console.log('\nappfogMongoData', appfogMongoData);
-
-        mongourl = function(obj) {
-            obj.hostname = obj.hostname || 'localhost';
-            obj.port = obj.port || 27017;
-            obj.db = obj.db || 'test';
-
-            if (obj.username && obj.password) {
-                return "mongodb://" + obj.username + ":" + obj.password + "@" + obj.hostname + ":" + obj.port + "/" + obj.db;
-            }
-            else {
-                return "mongodb://" + obj.hostname + ":" + obj.port + "/" + obj.db;
-            }
-        }(appfogMongoData);
-
-        // console.log('\nmongourl', mongourl);
-
-        mongoose.connect(mongourl);
-
-        db = mongoose.connection;
-    }
-    else {
-        // console.log('\nNormal DB');
-
-        appMongoData = config.mongodb;
-        mongoose.connect(appMongoData.host, appMongoData.dbname, appMongoData.port);
-
-        db = mongoose.connection;
-    }
-
-    // Base-36 alphanumeric indexing
-    mongooseIncr.loadAutoIncr(db);
-
-    db.once('open', function() {
-        log('info', 'Mongoose was connected successfully.');
-
-        require(PATHS.LIBS + '/dbMock');
-
-        if (process.argv.indexOf('--mock-data') !== -1) {
-            require(PATHS.LIBS + '/mockData.js').then(function() {
-                require('server.js');
-            });
-        }
-        else {
+    mongoose.connection
+        .once('open', function() {
+            log('info', 'Mongoose was connected successfully.');
 
             require('./server.js');
-        }
-    });
+        })
+        .once('error', function(err) {
+            log('error', 'Mongoose connection error: ', err);
 
-    db.once('error', function(err) {
-        log('error', 'Mongoose connection error');
-        console.log(err);
-
-
-        process.exit(); // todo: [1] [2]
-    });
+            process.exit();
+        });
 })();
 
 
-(function() {
-    //initControllers();
-    initModels();
+/**
+ * Генерируем карту с ссылками на объекты контроллеров и моделей
+ */
+;(function() {
 
-    // function initControllers() {
-    //     var controllersDir = PATHS.CONTROLLERS;
+    ;(function initControllers() {
+        readDir(PATHS.CONTROLLERS, function(pathToFile) {
+            controllers[pathToFile.split('/').pop().split('.js').shift()] = require(pathToFile);
+        });
+    }());
 
-    //     readDir(controllersDir, function(pathToFile) {
-    //         var controller = require(pathToFile);
-
-    //         // TODO: name is required
-    //         // TODO: async init ?
-
-    //         if (controller.init) {
-    //             controller.init();
-    //         }
-
-    //         if (!controller.isAbstract) {
-    //             controllers[controller.name] = controller;
-    //         }
-    //     });
-
-    // }
-
-    function initModels() {
-        var modelsDir = PATHS.MODELS;
-
-        readDir(modelsDir, function(pathToFile) {
+    ;(function initModels() {
+        readDir(PATHS.MODELS, function(pathToFile) {
             var model = require(pathToFile);
 
             models[model.name] = model.model;
-
-            if (model.generator) models[model.name]._e_generator_ = model.generator;
-        }, ['mocks']);
-    }
+        });
+    }());
 
     function readDir(dir, fileHandler, ignoredDirs) {
         var files = fs.readdirSync(dir);
@@ -203,14 +111,7 @@ models = {};
             var pathToFile = dir + '/' + fileName,
                 stat = fs.statSync(pathToFile);
 
-            if (stat.isFile()) {
-                fileHandler(pathToFile);
-            }
-            else if (stat.isDirectory()) {
-                if (!ignoredDirs || !~ignoredDirs.indexOf(path.basename(pathToFile))) {
-                    readDir(pathToFile, fileHandler);
-                }
-            }
+            fileHandler(pathToFile);
         });
-    }
+    };
 })();
