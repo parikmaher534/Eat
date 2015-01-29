@@ -1,53 +1,92 @@
-var express = require('express');
-var path = require('path');
-var favicon = require('serve-favicon');
-var logger = require('morgan');
-var cookieParser = require('cookie-parser');
-var bodyParser = require('body-parser');
-var routes = require('./routes/index');
+var ENV = process.env.NODE_ENV || 'local',
+    cluster = require('cluster');
 
-var app = express();
-
-// uncomment after placing your favicon in /public
-//app.use(favicon(__dirname + '/public/favicon.ico'));
-app.use(logger('dev'));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.use('/', routes);
-
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-    var err = new Error('Not Found');
-    err.status = 404;
-    next(err);
-});
-
-
-
-// development error handler
-// will print stacktrace
-if (app.get('env') === 'development') {
-    app.use(function(err, req, res, next) {
-        res.status(err.status || 500);
-        res.render('error', {
-            message: err.message,
-            error: err
-        });
-    });
+switch (ENV) {
+    case 'local':
+        console.log('Local mode configuration');
+    case 'development':
+        console.log('Application run in development environment (single thread).');
+        runSingleThread();
+        break;
+    case 'production':
+        if (cluster.isMaster) {
+            console.log('Application run in production environment (multi threads).');
+        }
+        runMultiThreads();
+        break;
+    default:
+        console.error('Wrong ENV.');
 }
 
-// production error handler
-// no stacktraces leaked to user
-app.use(function(err, req, res, next) {
-    res.status(err.status || 500);
-    res.render('error', {
-        message: err.message,
-        error: {}
-    });
-});
+function runSingleThread() {
+    require('./init.js');
+}
 
+function runMultiThreads() {
+    var i, pid,
+        numCPUs = require('os').cpus().length,
+        rssWarn = (250 * 1024 * 1024),
+        heapWarn = (250 * 1024 * 1024),
+        workers = {};
 
-module.exports = app;
+    if (cluster.isMaster) {
+        for (i = 0; i < numCPUs; i++) {
+            createWorker();
+        }
+
+        setInterval(function() {
+            var time = new Date().getTime();
+
+            for (pid in workers) {
+                if (workers.hasOwnProperty(pid) && workers[pid].lastCb + 5000 < time) {
+                    console.error('Long running worker ' + pid + ' killed.');
+
+                    workers[pid].worker.kill();
+                    delete(workers[pid]);
+                    createWorker();
+                }
+            }
+        }, 1000);
+
+        cluster.on('exit', function(worker, code, signal) {
+            console.log('worker ' + worker.process.pid + ' died');
+        });
+    }
+    else {
+        runSingleThread();
+
+        setInterval(function report() {
+            process.send({
+                cmd: 'reportMem',
+                memory: process.memoryUsage(),
+                process: process.pid
+            });
+        }, 1000);
+    }
+
+    function createWorker() {
+        var worker = cluster.fork().process;
+
+        worker.on('disconnect', function(worker) {
+            console.error('Worker disconnected!');
+            createWorker();
+        });
+
+        console.log('Created worker: ' + worker.pid + '.');
+
+        workers[worker.pid] = {
+            worker: worker,
+            lastCb: new Date().getTime() - 1000
+        };
+
+        worker.on('message', function(m) {
+            if (m.cmd === 'reportMem') {
+                workers[m.process].lastCb = new Date().getTime();
+
+                if (m.memory.rss > rssWarn) {
+                    console.log('Worker ' + m.process + ' using too much memory.');
+                }
+            }
+        });
+    }
+}
