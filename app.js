@@ -81,10 +81,14 @@ function runMultiThreads() {
 
         worker.on('message', function(m) {
             if (m.cmd === 'reportMem') {
-                workers[m.process].lastCb = new Date().getTime();
+                if( workers[m.process] ) {
+                    workers[m.process].lastCb = new Date().getTime();
 
-                if (m.memory.rss > rssWarn) {
-                    console.log('Worker ' + m.process + ' using too much memory.');
+                    if (m.memory.rss > rssWarn) {
+                        console.log('Worker ' + m.process + ' using too much memory.');
+                    }
+                } else {
+                    console.log('No worker find for:', m);
                 }
             }
         });
