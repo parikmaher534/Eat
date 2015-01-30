@@ -1,4 +1,5 @@
-Run DEBUG=myapp ./bin/www
+Run application: node app.js
 
-Assemble frontend: ./frontend/node_modules/bem/bin/bem make
-Run frontend server: ./node_modules/.bin/bem server
+Assemble frontend: make
+
+To run in production mode set: export NODE_ENV=production
